@@ -1,6 +1,14 @@
 # Simulation outputs
 *.vcd
 cpu_sim
+cpu_verilator
+
+# Verilator build directory
+obj_dir/
+
+# Zig build artifacts
+ref/zig-out/
+ref/.zig-cache/
 
 # Editor files
 *.swp

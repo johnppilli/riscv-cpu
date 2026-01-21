@@ -1,13 +1,19 @@
-# Makefile for RISC-V CPU simulation
+# Makefile for RISC-V CPU simulation and verification
 
-# Simulator (using Icarus Verilog - free and open source)
+# ============ Tools ============
 IVERILOG = iverilog
 VVP = vvp
+VERILATOR = verilator
+ZIG = zig
 
-# Source files
+# ============ Directories ============
 RTL_DIR = rtl
 TB_DIR = tb
+SIM_DIR = sim
+REF_DIR = ref
+OBJ_DIR = obj_dir
 
+# ============ Source Files ============
 RTL_FILES = $(RTL_DIR)/alu.sv \
             $(RTL_DIR)/register_file.sv \
             $(RTL_DIR)/program_counter.sv \
@@ -18,26 +24,60 @@ RTL_FILES = $(RTL_DIR)/alu.sv \
 
 TB_FILES = $(TB_DIR)/cpu_tb.sv
 
-# Output
+# ============ Icarus Verilog (simple simulation) ============
 SIM_OUT = cpu_sim
 
-# Default target
+.PHONY: all sim wave clean verilate verify ref
+
 all: sim
 
-# Compile
 compile: $(RTL_FILES) $(TB_FILES)
 	$(IVERILOG) -g2012 -o $(SIM_OUT) $(TB_FILES) $(RTL_FILES)
 
-# Run simulation
 sim: compile
 	$(VVP) $(SIM_OUT)
 
-# View waveforms (requires GTKWave)
 wave: sim
 	gtkwave cpu_tb.vcd &
 
-# Clean
-clean:
-	rm -f $(SIM_OUT) *.vcd
+# ============ Zig Reference Model ============
+REF_LIB = $(REF_DIR)/zig-out/lib/libriscv_ref.a
 
-.PHONY: all compile sim wave clean
+ref:
+	cd $(REF_DIR) && $(ZIG) build -Doptimize=ReleaseFast
+
+# ============ Verilator (verification) ============
+VERILATOR_FLAGS = --cc --exe --build \
+                  --trace \
+                  --public \
+                  -Wno-fatal \
+                  --top-module cpu_top \
+                  -CFLAGS "-I../$(SIM_DIR) -I../$(REF_DIR)" \
+                  -LDFLAGS "-L../$(REF_DIR)/zig-out/lib -lriscv_ref"
+
+verilate: ref
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_FILES) \
+		$(SIM_DIR)/tb_top.cpp \
+		-o ../cpu_verilator
+
+verify: verilate
+	./cpu_verilator
+
+# ============ Clean ============
+clean:
+	rm -f $(SIM_OUT) *.vcd cpu_verilator
+	rm -rf $(OBJ_DIR)
+	rm -rf $(REF_DIR)/zig-out $(REF_DIR)/.zig-cache
+
+# ============ Help ============
+help:
+	@echo "RISC-V CPU Makefile"
+	@echo ""
+	@echo "Targets:"
+	@echo "  sim      - Run simple simulation (Icarus Verilog)"
+	@echo "  wave     - Open waveform viewer"
+	@echo "  ref      - Build Zig reference model"
+	@echo "  verilate - Compile with Verilator"
+	@echo "  verify   - Run RTL vs reference model verification"
+	@echo "  clean    - Remove generated files"
