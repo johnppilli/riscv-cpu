@@ -54,7 +54,13 @@ riscv-cpu/
 │   ├── instruction_memory.sv
 │   ├── data_memory.sv
 │   └── cpu_top.sv          # Top-level module
-├── tb/                     # Testbenches
+├── ref/                    # Reference model (Zig)
+│   ├── riscv_ref.zig       # RISC-V software emulator
+│   └── build.zig           # Zig build configuration
+├── sim/                    # Verilator testbench
+│   ├── tb_top.cpp          # C++ testbench
+│   └── riscv_ref.h         # C header for Zig library
+├── tb/                     # Icarus Verilog testbench
 │   └── cpu_tb.sv
 ├── tests/                  # Test programs
 │   └── simple_add.s
@@ -94,9 +100,57 @@ x3 = 8 (expected: 8)
 *** PASS ***
 ```
 
+## Verification
+
+The RTL is verified against a reference model using Verilator.
+
+**Reference Model**: A RISC-V instruction set emulator written in Zig (`ref/riscv_ref.zig`)
+
+**Verification Flow**:
+1. Verilator compiles SystemVerilog RTL to C++
+2. C++ testbench runs both RTL and reference model
+3. After each instruction, PC and all 32 registers are compared
+4. Any mismatch is flagged as a failure
+
+```bash
+# Run verification (requires Verilator and Zig)
+make verify
+```
+
+```
+========================================
+RISC-V CPU Verification Testbench
+RTL vs Reference Model Comparison
+========================================
+
+===== Running Test: Simple Add =====
+PASS: Simple Add
+
+===== Running Test: Subtraction =====
+PASS: Subtraction
+
+===== Running Test: Logical Ops =====
+PASS: Logical Ops
+
+===== Running Test: Immediate Ops =====
+PASS: Immediate Ops
+
+===== Running Test: Shifts =====
+PASS: Shifts
+
+========================================
+Test Summary
+========================================
+Tests Passed: 5
+Tests Failed: 0
+
+*** ALL TESTS PASSED ***
+```
+
 ## Roadmap
 
 - [x] Single-cycle CPU
+- [x] Verilator verification with Zig reference model
 - [ ] 5-stage pipeline
 - [ ] Hazard detection and forwarding
 - [ ] Branch prediction
