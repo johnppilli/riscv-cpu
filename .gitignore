@@ -1,0 +1,11 @@
+# Simulation outputs
+*.vcd
+cpu_sim
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
