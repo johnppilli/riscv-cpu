@@ -14,31 +14,50 @@ REF_DIR = ref
 OBJ_DIR = obj_dir
 
 # ============ Source Files ============
-RTL_FILES = $(RTL_DIR)/alu.sv \
-            $(RTL_DIR)/register_file.sv \
-            $(RTL_DIR)/program_counter.sv \
-            $(RTL_DIR)/decoder.sv \
-            $(RTL_DIR)/instruction_memory.sv \
-            $(RTL_DIR)/data_memory.sv \
-            $(RTL_DIR)/cpu_top.sv
+RTL_COMMON = $(RTL_DIR)/alu.sv \
+             $(RTL_DIR)/register_file.sv \
+             $(RTL_DIR)/program_counter.sv \
+             $(RTL_DIR)/decoder.sv \
+             $(RTL_DIR)/instruction_memory.sv \
+             $(RTL_DIR)/data_memory.sv
 
-TB_FILES = $(TB_DIR)/cpu_tb.sv
+RTL_SINGLE = $(RTL_COMMON) $(RTL_DIR)/cpu_top.sv
 
-# ============ Icarus Verilog (simple simulation) ============
+RTL_PIPELINED = $(RTL_COMMON) \
+                $(RTL_DIR)/pipeline_regs.sv \
+                $(RTL_DIR)/cpu_pipelined.sv
+
+TB_SINGLE = $(TB_DIR)/cpu_tb.sv
+TB_PIPELINED = $(TB_DIR)/cpu_pipelined_tb.sv
+
+# ============ Icarus Verilog (single-cycle) ============
 SIM_OUT = cpu_sim
+SIM_PIPELINED_OUT = cpu_pipelined_sim
 
-.PHONY: all sim wave clean verilate verify ref
+.PHONY: all sim sim-pipe wave wave-pipe clean verilate verify ref help
 
 all: sim
 
-compile: $(RTL_FILES) $(TB_FILES)
-	$(IVERILOG) -g2012 -o $(SIM_OUT) $(TB_FILES) $(RTL_FILES)
+# Single-cycle simulation
+compile: $(RTL_SINGLE) $(TB_SINGLE)
+	$(IVERILOG) -g2012 -o $(SIM_OUT) $(TB_SINGLE) $(RTL_SINGLE)
 
 sim: compile
 	$(VVP) $(SIM_OUT)
 
 wave: sim
 	gtkwave cpu_tb.vcd &
+
+# Pipelined simulation
+compile-pipe: $(RTL_PIPELINED) $(TB_PIPELINED)
+	$(IVERILOG) -g2012 -o $(SIM_PIPELINED_OUT) $(TB_PIPELINED) $(RTL_PIPELINED)
+
+sim-pipe: compile-pipe
+	cp program_pipelined.hex program.hex
+	$(VVP) $(SIM_PIPELINED_OUT)
+
+wave-pipe: sim-pipe
+	gtkwave cpu_pipelined_tb.vcd &
 
 # ============ Zig Reference Model ============
 REF_LIB = $(REF_DIR)/zig-out/lib/libriscv_ref.a
@@ -57,7 +76,7 @@ VERILATOR_FLAGS = --cc --exe --build \
 
 verilate: ref
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(RTL_FILES) \
+		$(RTL_SINGLE) \
 		$(SIM_DIR)/tb_top.cpp \
 		-o ../cpu_verilator
 
@@ -66,7 +85,7 @@ verify: verilate
 
 # ============ Clean ============
 clean:
-	rm -f $(SIM_OUT) *.vcd cpu_verilator
+	rm -f $(SIM_OUT) $(SIM_PIPELINED_OUT) *.vcd cpu_verilator
 	rm -rf $(OBJ_DIR)
 	rm -rf $(REF_DIR)/zig-out $(REF_DIR)/.zig-cache
 
@@ -74,10 +93,17 @@ clean:
 help:
 	@echo "RISC-V CPU Makefile"
 	@echo ""
-	@echo "Targets:"
-	@echo "  sim      - Run simple simulation (Icarus Verilog)"
-	@echo "  wave     - Open waveform viewer"
-	@echo "  ref      - Build Zig reference model"
-	@echo "  verilate - Compile with Verilator"
-	@echo "  verify   - Run RTL vs reference model verification"
-	@echo "  clean    - Remove generated files"
+	@echo "Single-cycle CPU:"
+	@echo "  sim        - Run single-cycle simulation"
+	@echo "  wave       - View single-cycle waveforms"
+	@echo ""
+	@echo "Pipelined CPU:"
+	@echo "  sim-pipe   - Run pipelined simulation"
+	@echo "  wave-pipe  - View pipelined waveforms"
+	@echo ""
+	@echo "Verification:"
+	@echo "  ref        - Build Zig reference model"
+	@echo "  verilate   - Compile with Verilator"
+	@echo "  verify     - Run RTL vs reference model verification"
+	@echo ""
+	@echo "  clean      - Remove generated files"

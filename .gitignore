@@ -17,3 +17,4 @@ ref/.zig-cache/
 
 # macOS
 .DS_Store
+cpu_pipelined_sim
