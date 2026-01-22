@@ -1,4 +1,4 @@
-// cpu_pipelined_tb.sv - Testbench for pipelined CPU with hazard handling
+// cpu_pipelined_tb.sv - Testbench for pipelined CPU with branch prediction
 
 module cpu_pipelined_tb;
 
@@ -26,14 +26,17 @@ module cpu_pipelined_tb;
 
         // Initialize
         $display("===========================================");
-        $display("  RISC-V Pipelined CPU - Hazard Test");
+        $display("  RISC-V Pipelined CPU - Branch Test");
         $display("===========================================");
         $display("");
-        $display("Test program (back-to-back dependent instructions):");
-        $display("  ADDI x1, x0, 5   // x1 = 5");
-        $display("  ADDI x2, x1, 3   // x2 = x1 + 3 = 8 (needs forwarding!)");
-        $display("  ADD  x3, x1, x2  // x3 = x1 + x2 = 13 (needs forwarding!)");
-        $display("  ADD  x4, x3, x1  // x4 = x3 + x1 = 18 (needs forwarding!)");
+        $display("Test program (loop with branch):");
+        $display("  ADDI x1, x0, 3      // x1 = 3 (counter)");
+        $display("  loop:");
+        $display("    ADDI x1, x1, -1   // x1--");
+        $display("    BNE x1, x0, loop  // if x1 != 0, loop");
+        $display("  ADDI x2, x0, 42     // x2 = 42 (done marker)");
+        $display("");
+        $display("Expected: Loop runs 3 times, then x1=0, x2=42");
         $display("");
 
         // Reset the CPU
@@ -42,50 +45,36 @@ module cpu_pipelined_tb;
         rst = 0;
 
         // Run for enough cycles
-        $display("Cycle | PC       | Stall | FwdA | FwdB | x1   | x2   | x3   | x4");
-        $display("------+----------+-------+------+------+------+------+------+------");
+        $display("Cycle | PC       | Predict | Mispred | x1   | x2");
+        $display("------+----------+---------+---------+------+------");
 
-        repeat (20) begin
+        repeat (40) begin
             @(posedge clk);
-            #1;  // Small delay to let signals settle
-            $display("%5d | %h |   %b   |  %b   |  %b   | %4d | %4d | %4d | %4d",
+            #1;
+            $display("%5d | %h |    %b    |    %b    | %4d | %4d",
                      $time/10,
                      cpu.if_pc,
-                     cpu.stall_if,
-                     cpu.forward_a,
-                     cpu.forward_b,
+                     cpu.if_predict_taken,
+                     cpu.mem_mispredicted,
                      cpu.regfile.registers[1],
-                     cpu.regfile.registers[2],
-                     cpu.regfile.registers[3],
-                     cpu.regfile.registers[4]);
+                     cpu.regfile.registers[2]);
         end
 
         $display("");
         $display("===========================================");
         $display("  Final Register Values");
         $display("===========================================");
-        $display("x1 = %0d (expected: 5)", cpu.regfile.registers[1]);
-        $display("x2 = %0d (expected: 8)", cpu.regfile.registers[2]);
-        $display("x3 = %0d (expected: 13)", cpu.regfile.registers[3]);
-        $display("x4 = %0d (expected: 18)", cpu.regfile.registers[4]);
+        $display("x1 = %0d (expected: 0)", cpu.regfile.registers[1]);
+        $display("x2 = %0d (expected: 42)", cpu.regfile.registers[2]);
 
         // Verify results
-        // With hazard handling:
-        // ADDI x1, x0, 5  -> x1 = 5
-        // ADDI x2, x1, 3  -> x2 = 5 + 3 = 8 (forwarded from MEM or WB)
-        // ADD  x3, x1, x2 -> x3 = 5 + 8 = 13 (forwarded)
-        // ADD  x4, x3, x1 -> x4 = 13 + 5 = 18 (forwarded)
-
-        if (cpu.regfile.registers[1] == 5 &&
-            cpu.regfile.registers[2] == 8 &&
-            cpu.regfile.registers[3] == 13 &&
-            cpu.regfile.registers[4] == 18) begin
+        if (cpu.regfile.registers[1] == 0 &&
+            cpu.regfile.registers[2] == 42) begin
             $display("");
-            $display("*** PASS - Hazard handling works! ***");
+            $display("*** PASS - Branch prediction works! ***");
         end else begin
             $display("");
             $display("*** FAIL ***");
-            $display("Hazard forwarding did not produce correct values.");
         end
 
         $display("");

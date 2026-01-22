@@ -19,6 +19,7 @@ module decoder (
     output logic        mem_write,    // Write to data memory
     output logic        mem_to_reg,   // 0 = ALU result, 1 = memory data
     output logic        branch,       // Branch instruction
+    output logic [2:0]  branch_type,  // Branch condition (funct3)
     output logic        jump          // Jump instruction (JAL/JALR)
 );
 
@@ -89,14 +90,15 @@ module decoder (
     // Control signal generation
     always_comb begin
         // Defaults
-        alu_op    = ALU_ADD;
-        alu_src   = 1'b0;
-        reg_write = 1'b0;
-        mem_read  = 1'b0;
-        mem_write = 1'b0;
-        mem_to_reg = 1'b0;
-        branch    = 1'b0;
-        jump      = 1'b0;
+        alu_op      = ALU_ADD;
+        alu_src     = 1'b0;
+        reg_write   = 1'b0;
+        mem_read    = 1'b0;
+        mem_write   = 1'b0;
+        mem_to_reg  = 1'b0;
+        branch      = 1'b0;
+        branch_type = 3'b000;
+        jump        = 1'b0;
 
         case (opcode)
             OP_OP: begin  // R-type (add, sub, and, or, etc.)
@@ -144,8 +146,9 @@ module decoder (
             end
 
             OP_BRANCH: begin  // beq, bne, blt, etc.
-                branch = 1'b1;
-                alu_op = ALU_SUB;  // For comparison
+                branch      = 1'b1;
+                branch_type = funct3;  // 000=BEQ, 001=BNE, 100=BLT, 101=BGE, 110=BLTU, 111=BGEU
+                alu_op      = ALU_SUB; // For comparison
             end
 
             OP_JAL: begin

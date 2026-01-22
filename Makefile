@@ -27,6 +27,8 @@ RTL_PIPELINED = $(RTL_COMMON) \
                 $(RTL_DIR)/pipeline_regs.sv \
                 $(RTL_DIR)/forwarding_unit.sv \
                 $(RTL_DIR)/hazard_unit.sv \
+                $(RTL_DIR)/branch_predictor.sv \
+                $(RTL_DIR)/branch_target_buffer.sv \
                 $(RTL_DIR)/cpu_pipelined.sv
 
 TB_SINGLE = $(TB_DIR)/cpu_tb.sv
@@ -56,7 +58,7 @@ compile-pipe: $(RTL_PIPELINED) $(TB_PIPELINED)
 	$(IVERILOG) -g2012 -o $(SIM_PIPELINED_OUT) $(TB_PIPELINED) $(RTL_PIPELINED)
 
 sim-pipe: compile-pipe
-	cp program_hazard_test.hex program.hex
+	cp program_branch_test.hex program.hex
 	$(VVP) $(SIM_PIPELINED_OUT)
 
 wave-pipe: sim-pipe
