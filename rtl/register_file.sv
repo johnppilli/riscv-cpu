@@ -21,10 +21,16 @@ module register_file (
         end
     end
 
-    // Read ports (combinational)
+    // Read ports (combinational) with internal forwarding
     // x0 is hardwired to zero in RISC-V
-    assign read_data1 = (rs1 == 5'd0) ? 32'd0 : registers[rs1];
-    assign read_data2 = (rs2 == 5'd0) ? 32'd0 : registers[rs2];
+    // Internal forwarding: if we're writing and reading the same register
+    // in the same cycle, return the write value (not the stale value)
+    assign read_data1 = (rs1 == 5'd0) ? 32'd0 :
+                        (we && rd == rs1 && rd != 5'd0) ? write_data :
+                        registers[rs1];
+    assign read_data2 = (rs2 == 5'd0) ? 32'd0 :
+                        (we && rd == rs2 && rd != 5'd0) ? write_data :
+                        registers[rs2];
 
     // Write port (sequential, on clock edge)
     always_ff @(posedge clk) begin

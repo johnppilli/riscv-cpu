@@ -54,6 +54,7 @@ module cpu_top (
     program_counter pc_inst (
         .clk     (clk),
         .rst     (rst),
+        .stall   (1'b0),  // Single-cycle never stalls
         .pc_next (pc_next),
         .pc      (pc)
     );

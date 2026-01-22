@@ -1,9 +1,10 @@
-// cpu_pipelined.sv - 5-stage pipelined RISC-V CPU
+// cpu_pipelined.sv - 5-stage pipelined RISC-V CPU with hazard handling
 //
 // Stages: IF (Fetch) -> ID (Decode) -> EX (Execute) -> MEM (Memory) -> WB (Writeback)
 //
-// Note: This is a basic pipeline without hazard detection/forwarding yet.
-//       NOPs or careful instruction ordering needed to avoid hazards.
+// This version includes:
+//   - Forwarding Unit: Passes results from MEM/WB directly to EX when needed
+//   - Hazard Detection: Stalls pipeline for load-use hazards
 
 module cpu_pipelined (
     input  logic clk,
@@ -51,7 +52,9 @@ module cpu_pipelined (
     logic        ex_mem_to_reg;
     logic        ex_branch;
     logic        ex_jump;
-    logic [31:0] ex_alu_operand_b;
+    logic [31:0] ex_alu_operand_a;    // After forwarding mux
+    logic [31:0] ex_alu_operand_b;    // After forwarding mux
+    logic [31:0] ex_alu_operand_b_fwd; // Forwarded rs2 value (before alu_src mux)
     logic [31:0] ex_alu_result;
     logic        ex_alu_zero;
     logic [31:0] ex_branch_target;
@@ -70,6 +73,7 @@ module cpu_pipelined (
     logic        mem_jump;
     logic [31:0] mem_data_read;
     logic        mem_take_branch;
+    logic [31:0] mem_write_back_data;  // Data to forward from MEM stage
 
     // WB stage signals (from MEM/WB register)
     logic [31:0] wb_pc_plus4;
@@ -81,13 +85,46 @@ module cpu_pipelined (
     logic        wb_jump;
     logic [31:0] wb_write_data;
 
-    // Control signals
-    logic        pipeline_flush;
-    logic        pipeline_stall;
+    // Hazard control signals
+    logic        stall_if;
+    logic        stall_id;
+    logic        flush_ex;
+    logic        flush_if_id;  // For branch taken
 
-    // For now, no hazard detection - no stalls or flushes
-    assign pipeline_stall = 1'b0;
-    assign pipeline_flush = 1'b0;
+    // Forwarding control signals
+    logic [1:0]  forward_a;
+    logic [1:0]  forward_b;
+
+
+    // ============================================================
+    // Hazard Detection Unit
+    // ============================================================
+
+    hazard_unit hazard_inst (
+        .id_rs1      (id_rs1),
+        .id_rs2      (id_rs2),
+        .ex_rd       (ex_rd),
+        .ex_mem_read (ex_mem_read),
+        .stall_if    (stall_if),
+        .stall_id    (stall_id),
+        .flush_ex    (flush_ex)
+    );
+
+
+    // ============================================================
+    // Forwarding Unit
+    // ============================================================
+
+    forwarding_unit fwd_inst (
+        .ex_rs1        (ex_rs1),
+        .ex_rs2        (ex_rs2),
+        .mem_rd        (mem_rd),
+        .mem_reg_write (mem_reg_write),
+        .wb_rd         (wb_rd),
+        .wb_reg_write  (wb_reg_write),
+        .forward_a     (forward_a),
+        .forward_b     (forward_b)
+    );
 
 
     // ============================================================
@@ -96,14 +133,14 @@ module cpu_pipelined (
 
     assign if_pc_plus4 = if_pc + 32'd4;
 
-    // For now, simple PC logic (no branch handling from MEM stage yet)
-    // Branch resolution happens in MEM stage in this design
+    // PC logic - stall or update based on hazards and branches
     assign if_pc_next = (mem_take_branch) ? mem_alu_result : if_pc_plus4;
 
-    // Program Counter
+    // Program Counter (with stall support)
     program_counter pc_inst (
         .clk     (clk),
         .rst     (rst),
+        .stall   (stall_if),       // Hold PC when stalling
         .pc_next (if_pc_next),
         .pc      (if_pc)
     );
@@ -119,11 +156,14 @@ module cpu_pipelined (
     // IF/ID Pipeline Register
     // ============================================================
 
+    // Flush IF/ID on branch taken
+    assign flush_if_id = mem_take_branch;
+
     pipe_if_id if_id_reg (
         .clk            (clk),
         .rst            (rst),
-        .flush          (mem_take_branch),  // Flush on branch taken
-        .stall          (pipeline_stall),
+        .flush          (flush_if_id),
+        .stall          (stall_id),      // Stall on load-use hazard
         .if_pc          (if_pc),
         .if_instruction (if_instruction),
         .id_pc          (id_pc),
@@ -170,10 +210,11 @@ module cpu_pipelined (
     // ID/EX Pipeline Register
     // ============================================================
 
+    // Flush ID/EX on branch taken OR when we detect a load-use hazard
     pipe_id_ex id_ex_reg (
         .clk            (clk),
         .rst            (rst),
-        .flush          (mem_take_branch),  // Flush on branch taken
+        .flush          (mem_take_branch || flush_ex),  // Flush creates a bubble
         .id_pc          (id_pc),
         .id_read_data1  (id_read_data1),
         .id_read_data2  (id_read_data2),
@@ -208,16 +249,44 @@ module cpu_pipelined (
 
 
     // ============================================================
-    // EX Stage: Execute
+    // EX Stage: Execute (with forwarding muxes)
     // ============================================================
 
     assign ex_pc_plus4 = ex_pc + 32'd4;
     assign ex_branch_target = ex_pc + ex_imm;
-    assign ex_alu_operand_b = ex_alu_src ? ex_imm : ex_read_data2;
+
+    // What MEM stage will write back (for forwarding)
+    // This is the ALU result (or branch target for branches)
+    assign mem_write_back_data = mem_alu_result;
+
+    // Forwarding mux for operand A (rs1)
+    // forward_a: 00 = register file, 01 = WB, 10 = MEM
+    always_comb begin
+        case (forward_a)
+            2'b00:   ex_alu_operand_a = ex_read_data1;     // Normal: from register file
+            2'b01:   ex_alu_operand_a = wb_write_data;     // Forward from WB stage
+            2'b10:   ex_alu_operand_a = mem_write_back_data; // Forward from MEM stage
+            default: ex_alu_operand_a = ex_read_data1;
+        endcase
+    end
+
+    // Forwarding mux for operand B (rs2)
+    // First select forwarded value, then decide if we use immediate instead
+    always_comb begin
+        case (forward_b)
+            2'b00:   ex_alu_operand_b_fwd = ex_read_data2;     // Normal: from register file
+            2'b01:   ex_alu_operand_b_fwd = wb_write_data;     // Forward from WB stage
+            2'b10:   ex_alu_operand_b_fwd = mem_write_back_data; // Forward from MEM stage
+            default: ex_alu_operand_b_fwd = ex_read_data2;
+        endcase
+    end
+
+    // Final operand B: use immediate for I-type, otherwise use (possibly forwarded) rs2
+    assign ex_alu_operand_b = ex_alu_src ? ex_imm : ex_alu_operand_b_fwd;
 
     // ALU
     alu alu_inst (
-        .a      (ex_read_data1),
+        .a      (ex_alu_operand_a),
         .b      (ex_alu_operand_b),
         .alu_op (ex_alu_op),
         .result (ex_alu_result),
@@ -234,7 +303,7 @@ module cpu_pipelined (
         .rst            (rst),
         .ex_pc_plus4    (ex_pc_plus4),
         .ex_alu_result  (ex_branch ? ex_branch_target : ex_alu_result),
-        .ex_read_data2  (ex_read_data2),
+        .ex_read_data2  (ex_alu_operand_b_fwd),  // Use forwarded value for stores
         .ex_rd          (ex_rd),
         .ex_zero        (ex_alu_zero),
         .ex_reg_write   (ex_reg_write),

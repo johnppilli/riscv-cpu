@@ -1,4 +1,4 @@
-// cpu_pipelined_tb.sv - Testbench for pipelined CPU
+// cpu_pipelined_tb.sv - Testbench for pipelined CPU with hazard handling
 
 module cpu_pipelined_tb;
 
@@ -26,8 +26,14 @@ module cpu_pipelined_tb;
 
         // Initialize
         $display("===========================================");
-        $display("  RISC-V Pipelined CPU Testbench");
+        $display("  RISC-V Pipelined CPU - Hazard Test");
         $display("===========================================");
+        $display("");
+        $display("Test program (back-to-back dependent instructions):");
+        $display("  ADDI x1, x0, 5   // x1 = 5");
+        $display("  ADDI x2, x1, 3   // x2 = x1 + 3 = 8 (needs forwarding!)");
+        $display("  ADD  x3, x1, x2  // x3 = x1 + x2 = 13 (needs forwarding!)");
+        $display("  ADD  x4, x3, x1  // x4 = x3 + x1 = 18 (needs forwarding!)");
         $display("");
 
         // Reset the CPU
@@ -36,52 +42,50 @@ module cpu_pipelined_tb;
         rst = 0;
 
         // Run for enough cycles
-        // Pipeline needs more cycles: 4 cycles to fill + instruction cycles
-        // Test program has NOPs to avoid hazards
-        $display("Cycle | PC       | IF Instr | ID Instr | x1   | x2   | x3");
-        $display("------+----------+----------+----------+------+------+------");
+        $display("Cycle | PC       | Stall | FwdA | FwdB | x1   | x2   | x3   | x4");
+        $display("------+----------+-------+------+------+------+------+------+------");
 
-        repeat (25) begin
+        repeat (20) begin
             @(posedge clk);
             #1;  // Small delay to let signals settle
-            $display("%5d | %h | %h | %h | %4d | %4d | %4d",
+            $display("%5d | %h |   %b   |  %b   |  %b   | %4d | %4d | %4d | %4d",
                      $time/10,
                      cpu.if_pc,
-                     cpu.if_instruction,
-                     cpu.id_instruction,
+                     cpu.stall_if,
+                     cpu.forward_a,
+                     cpu.forward_b,
                      cpu.regfile.registers[1],
                      cpu.regfile.registers[2],
-                     cpu.regfile.registers[3]);
+                     cpu.regfile.registers[3],
+                     cpu.regfile.registers[4]);
         end
 
         $display("");
         $display("===========================================");
         $display("  Final Register Values");
         $display("===========================================");
-        $display("x1 = %0d", cpu.regfile.registers[1]);
-        $display("x2 = %0d", cpu.regfile.registers[2]);
-        $display("x3 = %0d", cpu.regfile.registers[3]);
+        $display("x1 = %0d (expected: 5)", cpu.regfile.registers[1]);
+        $display("x2 = %0d (expected: 8)", cpu.regfile.registers[2]);
+        $display("x3 = %0d (expected: 13)", cpu.regfile.registers[3]);
+        $display("x4 = %0d (expected: 18)", cpu.regfile.registers[4]);
 
-        // For pipelined CPU with NOPs between instructions:
-        // addi x1, x0, 5  -> x1 = 5
-        // nop (x3)
-        // nop
-        // nop
-        // addi x2, x0, 3  -> x2 = 3
-        // nop
-        // nop
-        // nop
-        // add x3, x1, x2  -> x3 = 8
+        // Verify results
+        // With hazard handling:
+        // ADDI x1, x0, 5  -> x1 = 5
+        // ADDI x2, x1, 3  -> x2 = 5 + 3 = 8 (forwarded from MEM or WB)
+        // ADD  x3, x1, x2 -> x3 = 5 + 8 = 13 (forwarded)
+        // ADD  x4, x3, x1 -> x4 = 13 + 5 = 18 (forwarded)
 
         if (cpu.regfile.registers[1] == 5 &&
-            cpu.regfile.registers[2] == 3 &&
-            cpu.regfile.registers[3] == 8) begin
+            cpu.regfile.registers[2] == 8 &&
+            cpu.regfile.registers[3] == 13 &&
+            cpu.regfile.registers[4] == 18) begin
             $display("");
-            $display("*** PASS ***");
+            $display("*** PASS - Hazard handling works! ***");
         end else begin
             $display("");
             $display("*** FAIL ***");
-            $display("Expected: x1=5, x2=3, x3=8");
+            $display("Hazard forwarding did not produce correct values.");
         end
 
         $display("");
