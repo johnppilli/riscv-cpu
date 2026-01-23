@@ -23,7 +23,12 @@ RTL_COMMON = $(RTL_DIR)/alu.sv \
 
 RTL_SINGLE = $(RTL_COMMON) $(RTL_DIR)/cpu_top.sv
 
-RTL_PIPELINED = $(RTL_COMMON) \
+RTL_PIPELINED = $(RTL_DIR)/alu.sv \
+                $(RTL_DIR)/register_file.sv \
+                $(RTL_DIR)/program_counter.sv \
+                $(RTL_DIR)/decoder.sv \
+                $(RTL_DIR)/cache.sv \
+                $(RTL_DIR)/main_memory.sv \
                 $(RTL_DIR)/pipeline_regs.sv \
                 $(RTL_DIR)/forwarding_unit.sv \
                 $(RTL_DIR)/hazard_unit.sv \
@@ -58,7 +63,7 @@ compile-pipe: $(RTL_PIPELINED) $(TB_PIPELINED)
 	$(IVERILOG) -g2012 -o $(SIM_PIPELINED_OUT) $(TB_PIPELINED) $(RTL_PIPELINED)
 
 sim-pipe: compile-pipe
-	cp program_branch_test.hex program.hex
+	cp program_hazard_test.hex program.hex
 	$(VVP) $(SIM_PIPELINED_OUT)
 
 wave-pipe: sim-pipe

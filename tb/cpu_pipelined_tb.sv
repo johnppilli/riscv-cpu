@@ -1,4 +1,4 @@
-// cpu_pipelined_tb.sv - Testbench for pipelined CPU with branch prediction
+// cpu_pipelined_tb.sv - Testbench for pipelined CPU with caches
 
 module cpu_pipelined_tb;
 
@@ -24,19 +24,17 @@ module cpu_pipelined_tb;
         $dumpfile("cpu_pipelined_tb.vcd");
         $dumpvars(0, cpu_pipelined_tb);
 
-        // Initialize
         $display("===========================================");
-        $display("  RISC-V Pipelined CPU - Branch Test");
+        $display("  RISC-V Pipelined CPU - Cache Test");
         $display("===========================================");
         $display("");
-        $display("Test program (loop with branch):");
-        $display("  ADDI x1, x0, 3      // x1 = 3 (counter)");
-        $display("  loop:");
-        $display("    ADDI x1, x1, -1   // x1--");
-        $display("    BNE x1, x0, loop  // if x1 != 0, loop");
-        $display("  ADDI x2, x0, 42     // x2 = 42 (done marker)");
+        $display("Test program (back-to-back with forwarding):");
+        $display("  ADDI x1, x0, 5     // x1 = 5");
+        $display("  ADDI x2, x1, 3     // x2 = 8");
+        $display("  ADD  x3, x1, x2    // x3 = 13");
+        $display("  ADD  x4, x3, x1    // x4 = 18");
         $display("");
-        $display("Expected: Loop runs 3 times, then x1=0, x2=42");
+        $display("With caches, initial misses add latency.");
         $display("");
 
         // Reset the CPU
@@ -44,34 +42,45 @@ module cpu_pipelined_tb;
         #25;
         rst = 0;
 
-        // Run for enough cycles
-        $display("Cycle | PC       | Predict | Mispred | x1   | x2");
-        $display("------+----------+---------+---------+------+------");
+        // Run for enough cycles (cache misses add latency)
+        // Each cache miss takes ~4 cycles to fetch from memory
+        // Plus filling 4 words per line
+        repeat (100) begin
+            @(posedge clk);
+        end
 
-        repeat (40) begin
+        // Show some status
+        $display("Cycle | ICache Stall | DCache Stall | x1   | x2   | x3   | x4");
+        $display("------+--------------+--------------+------+------+------+------");
+
+        repeat (50) begin
             @(posedge clk);
             #1;
-            $display("%5d | %h |    %b    |    %b    | %4d | %4d",
+            $display("%5d |      %b       |      %b       | %4d | %4d | %4d | %4d",
                      $time/10,
-                     cpu.if_pc,
-                     cpu.if_predict_taken,
-                     cpu.mem_mispredicted,
+                     cpu.icache_stall,
+                     cpu.dcache_stall,
                      cpu.regfile.registers[1],
-                     cpu.regfile.registers[2]);
+                     cpu.regfile.registers[2],
+                     cpu.regfile.registers[3],
+                     cpu.regfile.registers[4]);
         end
 
         $display("");
         $display("===========================================");
         $display("  Final Register Values");
         $display("===========================================");
-        $display("x1 = %0d (expected: 0)", cpu.regfile.registers[1]);
-        $display("x2 = %0d (expected: 42)", cpu.regfile.registers[2]);
+        $display("x1 = %0d (expected: 5)", cpu.regfile.registers[1]);
+        $display("x2 = %0d (expected: 8)", cpu.regfile.registers[2]);
+        $display("x3 = %0d (expected: 13)", cpu.regfile.registers[3]);
+        $display("x4 = %0d (expected: 18)", cpu.regfile.registers[4]);
 
-        // Verify results
-        if (cpu.regfile.registers[1] == 0 &&
-            cpu.regfile.registers[2] == 42) begin
+        if (cpu.regfile.registers[1] == 5 &&
+            cpu.regfile.registers[2] == 8 &&
+            cpu.regfile.registers[3] == 13 &&
+            cpu.regfile.registers[4] == 18) begin
             $display("");
-            $display("*** PASS - Branch prediction works! ***");
+            $display("*** PASS - Caches work correctly! ***");
         end else begin
             $display("");
             $display("*** FAIL ***");

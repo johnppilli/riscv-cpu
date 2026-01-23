@@ -108,6 +108,21 @@ module cpu_pipelined (
     logic        flush_if_id;
     logic        flush_id_ex;
 
+    // Cache signals
+    logic        icache_stall;
+    logic        dcache_stall;
+    logic        cache_stall;       // Global stall from cache misses
+    logic [31:0] imem_addr;
+    logic        imem_read_en;
+    logic [31:0] imem_read_data;
+    logic        imem_ready;
+    logic [31:0] dmem_addr;
+    logic        dmem_read_en;
+    logic        dmem_write_en;
+    logic [31:0] dmem_write_data;
+    logic [31:0] dmem_read_data;
+    logic        dmem_ready;
+
     // Forwarding control signals
     logic [1:0]  forward_a;
     logic [1:0]  forward_b;
@@ -143,6 +158,14 @@ module cpu_pipelined (
         .update_target   (mem_branch_target),
         .update_is_branch(mem_branch || mem_jump)
     );
+
+
+    // ============================================================
+    // Cache Stall Logic
+    // ============================================================
+
+    // Cache miss freezes the entire pipeline
+    assign cache_stall = icache_stall || dcache_stall;
 
 
     // ============================================================
@@ -196,19 +219,49 @@ module cpu_pipelined (
         end
     end
 
-    // Program Counter (with stall support)
+    // Program Counter (with stall support - hazard OR cache stall)
     program_counter pc_inst (
         .clk     (clk),
         .rst     (rst),
-        .stall   (stall_if),
+        .stall   (stall_if || cache_stall),
         .pc_next (if_pc_next),
         .pc      (if_pc)
     );
 
-    // Instruction Memory
-    instruction_memory imem (
-        .addr        (if_pc),
-        .instruction (if_instruction)
+    // Instruction Cache
+    cache #(
+        .CACHE_SIZE_BYTES(256),
+        .LINE_SIZE_BYTES(16)
+    ) icache (
+        .clk            (clk),
+        .rst            (rst),
+        .cpu_addr       (if_pc),
+        .cpu_write_data (32'd0),
+        .cpu_read_en    (1'b1),         // Always reading instructions
+        .cpu_write_en   (1'b0),         // Never write to I-cache from CPU
+        .cpu_read_data  (if_instruction),
+        .cpu_stall      (icache_stall),
+        .mem_addr       (imem_addr),
+        .mem_read_en    (imem_read_en),
+        .mem_write_en   (),             // Not used for I-cache
+        .mem_write_data (),
+        .mem_read_data  (imem_read_data),
+        .mem_ready      (imem_ready)
+    );
+
+    // Instruction Main Memory (slow)
+    main_memory #(
+        .MEM_SIZE_WORDS(4096),
+        .LATENCY(4)
+    ) imem (
+        .clk        (clk),
+        .rst        (rst),
+        .addr       (imem_addr),
+        .read_en    (imem_read_en),
+        .write_en   (1'b0),
+        .write_data (32'd0),
+        .read_data  (imem_read_data),
+        .ready      (imem_ready)
     );
 
 
@@ -223,7 +276,7 @@ module cpu_pipelined (
         .clk               (clk),
         .rst               (rst),
         .flush             (flush_if_id),
-        .stall             (stall_id),
+        .stall             (stall_id || cache_stall),
         .if_pc             (if_pc),
         .if_instruction    (if_instruction),
         .if_predict_taken  (if_predict_taken && if_btb_hit),
@@ -279,6 +332,7 @@ module cpu_pipelined (
         .clk               (clk),
         .rst               (rst),
         .flush             (flush_id_ex),
+        .stall             (cache_stall),
         .id_pc             (id_pc),
         .id_read_data1     (id_read_data1),
         .id_read_data2     (id_read_data2),
@@ -365,6 +419,7 @@ module cpu_pipelined (
         .clk              (clk),
         .rst              (rst),
         .flush            (mem_mispredicted),  // Flush on branch misprediction
+        .stall            (cache_stall),
         .ex_pc            (ex_pc),
         .ex_pc_plus4      (ex_pc_plus4),
         .ex_alu_result    (ex_alu_result),
@@ -428,14 +483,40 @@ module cpu_pipelined (
     // If we predicted taken but shouldn't have: go to PC + 4
     assign mem_correct_pc = mem_actual_taken ? mem_branch_target : mem_pc_plus4;
 
-    // Data Memory
-    data_memory dmem (
+    // Data Cache
+    cache #(
+        .CACHE_SIZE_BYTES(256),
+        .LINE_SIZE_BYTES(16)
+    ) dcache (
+        .clk            (clk),
+        .rst            (rst),
+        .cpu_addr       (mem_alu_result),
+        .cpu_write_data (mem_read_data2),
+        .cpu_read_en    (mem_mem_read),
+        .cpu_write_en   (mem_mem_write),
+        .cpu_read_data  (mem_data_read),
+        .cpu_stall      (dcache_stall),
+        .mem_addr       (dmem_addr),
+        .mem_read_en    (dmem_read_en),
+        .mem_write_en   (dmem_write_en),
+        .mem_write_data (dmem_write_data),
+        .mem_read_data  (dmem_read_data),
+        .mem_ready      (dmem_ready)
+    );
+
+    // Data Main Memory (slow)
+    main_memory #(
+        .MEM_SIZE_WORDS(4096),
+        .LATENCY(4)
+    ) dmem (
         .clk        (clk),
-        .mem_read   (mem_mem_read),
-        .mem_write  (mem_mem_write),
-        .addr       (mem_alu_result),
-        .write_data (mem_read_data2),
-        .read_data  (mem_data_read)
+        .rst        (rst),
+        .addr       (dmem_addr),
+        .read_en    (dmem_read_en),
+        .write_en   (dmem_write_en),
+        .write_data (dmem_write_data),
+        .read_data  (dmem_read_data),
+        .ready      (dmem_ready)
     );
 
 
@@ -446,6 +527,7 @@ module cpu_pipelined (
     pipe_mem_wb mem_wb_reg (
         .clk            (clk),
         .rst            (rst),
+        .stall          (cache_stall),
         .mem_pc_plus4   (mem_pc_plus4),
         .mem_alu_result (mem_alu_result),
         .mem_read_data  (mem_data_read),

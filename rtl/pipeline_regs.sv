@@ -50,6 +50,7 @@ module pipe_id_ex (
     input  logic        clk,
     input  logic        rst,
     input  logic        flush,
+    input  logic        stall,          // Hold values (for cache misses)
 
     // Inputs from ID stage
     input  logic [31:0] id_pc,
@@ -116,7 +117,7 @@ module pipe_id_ex (
             ex_branch         <= 1'b0;
             ex_branch_type    <= 3'd0;
             ex_jump           <= 1'b0;
-        end else begin
+        end else if (!stall) begin
             ex_pc             <= id_pc;
             ex_read_data1     <= id_read_data1;
             ex_read_data2     <= id_read_data2;
@@ -149,6 +150,7 @@ module pipe_ex_mem (
     input  logic        clk,
     input  logic        rst,
     input  logic        flush,          // Flush on misprediction
+    input  logic        stall,          // Hold values (for cache misses)
 
     // Inputs from EX stage
     input  logic [31:0] ex_pc,
@@ -206,7 +208,7 @@ module pipe_ex_mem (
             mem_branch        <= 1'b0;
             mem_branch_type   <= 3'd0;
             mem_jump          <= 1'b0;
-        end else begin
+        end else if (!stall) begin
             mem_pc            <= ex_pc;
             mem_pc_plus4      <= ex_pc_plus4;
             mem_alu_result    <= ex_alu_result;
@@ -235,6 +237,7 @@ endmodule
 module pipe_mem_wb (
     input  logic        clk,
     input  logic        rst,
+    input  logic        stall,          // Hold values (for cache misses)
 
     // Inputs from MEM stage
     input  logic [31:0] mem_pc_plus4,
@@ -268,7 +271,7 @@ module pipe_mem_wb (
             wb_reg_write   <= 1'b0;
             wb_mem_to_reg  <= 1'b0;
             wb_jump        <= 1'b0;
-        end else begin
+        end else if (!stall) begin
             wb_pc_plus4    <= mem_pc_plus4;
             wb_alu_result  <= mem_alu_result;
             wb_read_data   <= mem_read_data;
