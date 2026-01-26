@@ -63,7 +63,7 @@ compile: $(RTL_SINGLE) $(TB_SINGLE)
 	$(IVERILOG) -g2012 -o $(SIM_OUT) $(TB_SINGLE) $(RTL_SINGLE)
 
 sim: compile
-	cp program_single.hex program.hex
+	cp programs/program_single.hex program.hex
 	$(VVP) $(SIM_OUT)
 
 wave: sim
@@ -74,7 +74,7 @@ compile-pipe: $(RTL_PIPELINED) $(TB_PIPELINED)
 	$(IVERILOG) -g2012 -o $(SIM_PIPELINED_OUT) $(TB_PIPELINED) $(RTL_PIPELINED)
 
 sim-pipe: compile-pipe
-	cp program_hazard_test.hex program.hex
+	cp programs/program_pipelined.hex program.hex
 	$(VVP) $(SIM_PIPELINED_OUT)
 
 wave-pipe: sim-pipe
@@ -85,7 +85,7 @@ compile-ooo: $(RTL_OOO) $(TB_OOO)
 	$(IVERILOG) -g2012 -o $(SIM_OOO_OUT) $(TB_OOO) $(RTL_OOO)
 
 sim-ooo: compile-ooo
-	cp program_ooo_test.hex program.hex
+	cp programs/program_ooo_test.hex program.hex
 	$(VVP) $(SIM_OOO_OUT)
 
 wave-ooo: sim-ooo

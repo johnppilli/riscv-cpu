@@ -1,35 +1,30 @@
 # RISC-V CPU
 
-A single-cycle RISC-V RV32I processor implemented in SystemVerilog.
+An RV32I RISC-V processor implemented in SystemVerilog, built incrementally from single-cycle to pipelined to out-of-order execution.
 
-## Overview
+## Features
 
-This is a from-scratch implementation of a RISC-V CPU that executes the RV32I base integer instruction set. Currently implemented as a single-cycle design, with plans to evolve into a pipelined out-of-order processor.
+### Three CPU Implementations
 
-## Architecture
+**1. Single-Cycle CPU** (`rtl/cpu_top.sv`)
+- Basic RV32I implementation where each instruction completes in one cycle
+- Good for understanding the fundamentals
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐
-│    PC    │───▶│  I-Mem   │───▶│ Decoder  │
-└──────────┘    └──────────┘    └──────────┘
-      ▲                              │
-      │              ┌───────────────┘
-      │              ▼
-      │         ┌──────────┐
-      │         │ Register │
-      │         │   File   │
-      │         └──────────┘
-      │              │
-      │              ▼
-      │         ┌──────────┐
-      └─────────│   ALU    │
-                └──────────┘
-                     │
-                     ▼
-                ┌──────────┐
-                │  D-Mem   │
-                └──────────┘
-```
+**2. 5-Stage Pipelined CPU** (`rtl/cpu_pipelined.sv`)
+- Classic IF → ID → EX → MEM → WB pipeline
+- Data forwarding unit (EX-to-EX and MEM-to-EX paths)
+- Hazard detection with pipeline stalling for load-use hazards
+- 2-bit saturating counter branch predictor (64 entries) with BTB
+- Separate instruction and data caches (direct-mapped, write-through)
+
+**3. Out-of-Order CPU** (`rtl/cpu_ooo.sv`)
+- Full out-of-order execution with in-order commit
+- Register renaming with speculative and committed RAT
+- 64-entry physical register file
+- 8-entry issue queue with wakeup/select logic
+- 16-entry reorder buffer for precise exceptions
+- Free list for physical register allocation
+- Ready table to track operand availability
 
 ## Supported Instructions
 
@@ -38,7 +33,7 @@ This is a from-scratch implementation of a RISC-V CPU that executes the RV32I ba
 | R-type | `add`, `sub`, `and`, `or`, `xor`, `sll`, `srl`, `sra`, `slt`, `sltu` |
 | I-type | `addi`, `andi`, `ori`, `xori`, `slti`, `sltiu`, `slli`, `srli`, `srai`, `lw`, `jalr` |
 | S-type | `sw` |
-| B-type | `beq` |
+| B-type | `beq`, `bne`, `blt`, `bge`, `bltu`, `bgeu` |
 | U-type | `lui`, `auipc` |
 | J-type | `jal` |
 
@@ -46,38 +41,52 @@ This is a from-scratch implementation of a RISC-V CPU that executes the RV32I ba
 
 ```
 riscv-cpu/
-├── rtl/                    # RTL design files
-│   ├── alu.sv              # Arithmetic Logic Unit
-│   ├── register_file.sv    # 32x32-bit register file
-│   ├── program_counter.sv  # Program counter
-│   ├── decoder.sv          # Instruction decoder
-│   ├── instruction_memory.sv
-│   ├── data_memory.sv
-│   └── cpu_top.sv          # Top-level module
-├── ref/                    # Reference model (Zig)
-│   ├── riscv_ref.zig       # RISC-V software emulator
-│   └── build.zig           # Zig build configuration
-├── sim/                    # Verilator testbench
-│   ├── tb_top.cpp          # C++ testbench
-│   └── riscv_ref.h         # C header for Zig library
-├── tb/                     # Icarus Verilog testbench
-│   └── cpu_tb.sv
-├── tests/                  # Test programs
-│   └── simple_add.s
-├── program.hex             # Test program in hex
+├── rtl/                        # All RTL source files
+│   ├── cpu_top.sv              # Single-cycle CPU
+│   ├── cpu_pipelined.sv        # Pipelined CPU
+│   ├── cpu_ooo.sv              # Out-of-order CPU
+│   ├── alu.sv                  # ALU (shared)
+│   ├── decoder.sv              # Instruction decoder
+│   ├── register_file.sv        # Architectural register file
+│   ├── physical_regfile.sv     # Physical register file (OoO)
+│   ├── forwarding_unit.sv      # Data forwarding
+│   ├── hazard_unit.sv          # Hazard detection
+│   ├── branch_predictor.sv     # 2-bit saturating counter
+│   ├── branch_target_buffer.sv # BTB for branch targets
+│   ├── cache.sv                # Direct-mapped cache
+│   ├── rat.sv                  # Register alias table
+│   ├── rob.sv                  # Reorder buffer
+│   ├── issue_queue.sv          # Issue queue with wakeup
+│   └── free_list.sv            # Physical register free list
+├── tb/                         # Testbenches
+│   ├── cpu_tb.sv               # Single-cycle testbench
+│   ├── cpu_pipelined_tb.sv     # Pipelined testbench
+│   └── cpu_ooo_tb.sv           # OoO testbench
+├── programs/                   # Test programs (hex)
+├── ref/                        # Zig reference model
+├── sim/                        # Verilator testbench
+├── docs/                       # Documentation
 └── Makefile
 ```
 
-## Running the Simulation
+## Running Simulations
 
 Requires [Icarus Verilog](http://iverilog.icarus.com/).
 
 ```bash
-# Run simulation
+# Single-cycle CPU
 make sim
 
+# Pipelined CPU
+make sim-pipe
+
+# Out-of-order CPU
+make sim-ooo
+
 # View waveforms (requires GTKWave)
-make wave
+make wave       # single-cycle
+make wave-pipe  # pipelined
+make wave-ooo   # out-of-order
 
 # Clean build artifacts
 make clean
@@ -85,74 +94,105 @@ make clean
 
 ## Example Output
 
+### Single-Cycle
 ```
 === RISC-V CPU Testbench ===
-
 PC=00000000 | Instr=00500093 | x1=5 | x2=0 | x3=0
 PC=00000004 | Instr=00300113 | x1=5 | x2=3 | x3=0
 PC=00000008 | Instr=002081b3 | x1=5 | x2=3 | x3=8
-
-=== Test Results ===
-x1 = 5 (expected: 5)
-x2 = 3 (expected: 3)
-x3 = 8 (expected: 8)
-
 *** PASS ***
+```
+
+### Out-of-Order
+```
+=== Out-of-Order RISC-V CPU Testbench ===
+Running OoO test program...
+Cycle 50: Checking committed register state
+x1=5, x2=3, x3=8, x4=10, x5=18
+*** PASS - Out-of-order execution works! ***
+```
+
+## Architecture Diagrams
+
+### Single-Cycle
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐
+│    PC    │───▶│  I-Mem   │───▶│ Decoder  │
+└──────────┘    └──────────┘    └──────────┘
+                                     │
+                    ┌────────────────┘
+                    ▼
+               ┌──────────┐
+               │ Register │
+               │   File   │
+               └──────────┘
+                    │
+                    ▼
+               ┌──────────┐    ┌──────────┐
+               │   ALU    │───▶│  D-Mem   │
+               └──────────┘    └──────────┘
+```
+
+### 5-Stage Pipeline
+```
+┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐
+│  IF   │──▶│  ID   │──▶│  EX   │──▶│  MEM  │──▶│  WB   │
+└───────┘   └───────┘   └───────┘   └───────┘   └───────┘
+    │           │           │           │
+    ▼           │           │           │
+┌───────┐       │      ┌────┴────┐      │
+│Branch │       │      │Forwarding      │
+│Predict│       │      │  Unit   │◀─────┘
+└───────┘       │      └─────────┘
+                │           ▲
+                ▼           │
+           ┌─────────┐      │
+           │ Hazard  │──────┘
+           │  Unit   │ (stalls)
+           └─────────┘
+```
+
+### Out-of-Order Pipeline
+```
+┌───────┐   ┌────────────────┐   ┌─────────┐   ┌─────────┐   ┌────────┐
+│ Fetch │──▶│ Decode/Rename/ │──▶│  Issue  │──▶│ Execute │──▶│ Commit │
+│       │   │    Dispatch    │   │  Queue  │   │  (ALU)  │   │ (ROB)  │
+└───────┘   └────────────────┘   └─────────┘   └─────────┘   └────────┘
+                   │                  ▲              │            │
+                   ▼                  │              ▼            ▼
+              ┌─────────┐        ┌────┴────┐   ┌─────────┐   ┌─────────┐
+              │   RAT   │        │ Wakeup  │◀──│Broadcast│   │ Arch RF │
+              │(rename) │        │ Logic   │   │ Result  │   │ Update  │
+              └─────────┘        └─────────┘   └─────────┘   └─────────┘
+                   │
+              ┌────┴────┐
+              │  Free   │
+              │  List   │
+              └─────────┘
 ```
 
 ## Verification
 
-The RTL is verified against a reference model using Verilator.
+The CPU is verified using self-checking testbenches that run RISC-V programs and compare register state against expected values.
 
-**Reference Model**: A RISC-V instruction set emulator written in Zig (`ref/riscv_ref.zig`)
-
-**Verification Flow**:
-1. Verilator compiles SystemVerilog RTL to C++
-2. C++ testbench runs both RTL and reference model
-3. After each instruction, PC and all 32 registers are compared
-4. Any mismatch is flagged as a failure
+There's also a Verilator-based verification flow that compares the RTL against a Zig reference model:
 
 ```bash
-# Run verification (requires Verilator and Zig)
+# Build reference model and run verification
 make verify
 ```
 
-```
-========================================
-RISC-V CPU Verification Testbench
-RTL vs Reference Model Comparison
-========================================
+## Development History
 
-===== Running Test: Simple Add =====
-PASS: Simple Add
+This project was built incrementally:
 
-===== Running Test: Subtraction =====
-PASS: Subtraction
+1. **Single-cycle CPU** - Basic fetch-decode-execute in one cycle
+2. **5-stage pipeline** - Added pipeline registers between stages
+3. **Hazard handling** - Data forwarding and stall logic
+4. **Branch prediction** - 2-bit predictor with BTB
+5. **Caching** - Separate I-cache and D-cache
+6. **Out-of-order execution** - Register renaming, issue queue, ROB
 
-===== Running Test: Logical Ops =====
-PASS: Logical Ops
+## License
 
-===== Running Test: Immediate Ops =====
-PASS: Immediate Ops
-
-===== Running Test: Shifts =====
-PASS: Shifts
-
-========================================
-Test Summary
-========================================
-Tests Passed: 5
-Tests Failed: 0
-
-*** ALL TESTS PASSED ***
-```
-
-## Roadmap
-
-- [x] Single-cycle CPU
-- [x] Verilator verification with Zig reference model
-- [ ] 5-stage pipeline
-- [ ] Hazard detection and forwarding
-- [ ] Branch prediction
-- [ ] Instruction and data caches
-- [ ] Out-of-order execution (ROB, register renaming, issue queue)
+MIT

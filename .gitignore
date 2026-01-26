@@ -1,7 +1,10 @@
 # Simulation outputs
 *.vcd
 cpu_sim
+cpu_pipelined_sim
+cpu_ooo_sim
 cpu_verilator
+program.hex
 
 # Verilator build directory
 obj_dir/
@@ -17,4 +20,6 @@ ref/.zig-cache/
 
 # macOS
 .DS_Store
-cpu_pipelined_sim
+
+# Claude Code
+.claude/
