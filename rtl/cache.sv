@@ -71,7 +71,7 @@ module cache #(
     typedef enum logic [1:0] {
         IDLE,           // Normal operation
         FETCH,          // Fetching a line from memory
-        WRITE_BACK      // Writing data to memory
+        WRITE_THROUGH   // Writing data to memory
     } state_t;
 
     state_t state, next_state;
@@ -89,7 +89,7 @@ module cache #(
     always_comb begin
         mem_addr = fetch_addr;
         mem_read_en = (state == FETCH);
-        mem_write_en = (state == WRITE_BACK);
+        mem_write_en = (state == WRITE_THROUGH);
         mem_write_data = cpu_write_data;
     end
 
@@ -123,7 +123,7 @@ module cache #(
                         // Write hit - update cache (write-through)
                         data[addr_index][addr_word_offset] <= cpu_write_data;
                         // Also write to memory
-                        state <= WRITE_BACK;
+                        state <= WRITE_THROUGH;
                         fetch_addr <= cpu_addr;
                     end
                 end
@@ -145,7 +145,7 @@ module cache #(
                     end
                 end
 
-                WRITE_BACK: begin
+                WRITE_THROUGH: begin
                     if (mem_ready) begin
                         state <= IDLE;
                     end
