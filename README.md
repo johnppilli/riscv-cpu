@@ -115,7 +115,7 @@ sim/        Verilator C++ testbench
 
 ## Tools
 
-- [Icarus Verilog](http://iverilog.icarus.com/) — simulation
+- [Icarus Verilog](https://steveicarus.github.io/iverilog/) — simulation
 - [Verilator](https://www.veripool.org/verilator/) — verification
 - [GTKWave](http://gtkwave.sourceforge.net/) — waveform viewer
 - [Zig](https://ziglang.org/) — reference model
