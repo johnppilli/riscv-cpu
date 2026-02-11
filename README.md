@@ -1,5 +1,7 @@
 # RISC-V CPU
 
+![Tests](https://github.com/johnppilli/riscv-cpu/actions/workflows/test.yml/badge.svg)
+
 RV32I processor in SystemVerilog, built up from a simple single-cycle design to a full out-of-order execution engine.
 
 ## Architecture
