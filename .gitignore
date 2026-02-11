@@ -12,6 +12,9 @@ obj_dir/
 # Zig build artifacts
 ref/zig-out/
 ref/.zig-cache/
+assembler/zig-out/
+assembler/.zig-cache/
+assembler/*.hex
 
 # Editor files
 *.swp

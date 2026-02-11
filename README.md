@@ -111,6 +111,7 @@ make verify
 rtl/        SystemVerilog source (21 modules)
 tb/         Testbenches
 programs/   Test programs (.hex machine code)
+assembler/  RV32I assembler (.asm → .hex)
 ref/        Zig reference model for dual-model verification
 sim/        Verilator C++ testbench
 ```
@@ -122,9 +123,16 @@ sim/        Verilator C++ testbench
 - [GTKWave](http://gtkwave.sourceforge.net/) — waveform viewer
 - [Zig](https://ziglang.org/) — reference model
 
-## Related
+## Assembler
 
-- [riscv-assembler](https://github.com/johnppilli/riscv-assembler) — Assembler I built for this CPU. Takes `.asm` files and outputs `.hex` files that the instruction memory loads via `$readmemh`.
+Includes a [custom assembler](assembler/) written in Zig. Takes `.asm` files and outputs `.hex` files that the instruction memory loads via `$readmemh`.
+
+```bash
+cd assembler
+zig build run -- program.asm -o program.hex
+```
+
+See the [assembler README](assembler/README.md) for full details.
 
 ## How I Built It
 
